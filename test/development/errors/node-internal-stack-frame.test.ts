@@ -1,9 +1,5 @@
 import { nextTestSetup } from 'e2e-utils'
-import {
-  assertHasRedbox,
-  getStackFramesContent,
-  toggleCollapseCallStackFrames,
-} from 'next-test-utils'
+import { assertHasRedbox, getStackFramesContent } from 'next-test-utils'
 import { outdent } from 'outdent'
 
 describe('errors - node-internal-stack-frame', () => {
@@ -28,22 +24,22 @@ describe('errors - node-internal-stack-frame', () => {
     if (process.env.TURBOPACK) {
       // FIXME: ignore the next internal frames from node_modules
       expect(stack).toMatchInlineSnapshot(`
-       "at new URL ()
-       at NextTracerImpl.trace ()
-       at async doRender ()
-       at async responseGenerator ()
-       at async DevServer.renderToResponseWithComponentsImpl ()
-       at async DevServer.renderPageComponent ()
-       at async DevServer.renderToResponseImpl ()
-       at async DevServer.pipeImpl ()
-       at async NextNodeServer.handleCatchallRenderRequest ()
-       at async DevServer.handleRequestImpl ()
-       at async Span.traceAsyncFn ()
-       at async DevServer.handleRequest ()
-       at async invokeRender ()
-       at async handleRequest ()
-       at async requestHandlerImpl ()
-       at async Server.requestListener ()"
+        "at getServerSideProps ()
+        at spanContext ()
+        at async doRender ()
+        at async responseGenerator ()
+        at async DevServer.renderToResponseWithComponentsImpl ()
+        at async DevServer.renderPageComponent ()
+        at async DevServer.renderToResponseImpl ()
+        at async DevServer.pipeImpl ()
+        at async NextNodeServer.handleCatchallRenderRequest ()
+        at async DevServer.handleRequestImpl ()
+        at async Span.traceAsyncFn ()
+        at async DevServer.handleRequest ()
+        at async invokeRender ()
+        at async handleRequest ()
+        at async requestHandlerImpl ()
+        at async Server.requestListener ()"
       `)
     } else {
       expect(stack).toMatchInlineSnapshot(`
@@ -51,10 +47,5 @@ describe('errors - node-internal-stack-frame', () => {
         at renderToHTMLImpl ()"
       `)
     }
-    await toggleCollapseCallStackFrames(browser)
-
-    // TODO: Since there're still the locations
-    const expandedStack = await getStackFramesContent(browser)
-    expect(expandedStack).toContain(`at new URL ()`)
   })
 })

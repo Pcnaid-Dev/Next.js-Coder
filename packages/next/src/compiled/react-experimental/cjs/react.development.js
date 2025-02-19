@@ -256,7 +256,8 @@
         oldElement._debugStack,
         oldElement._debugTask
       );
-      newKey._store.validated = oldElement._store.validated;
+      oldElement._store &&
+        (newKey._store.validated = oldElement._store.validated);
       return newKey;
     }
     function isValidElement(object) {
@@ -1041,7 +1042,6 @@
       );
       return useOptimistic(passthrough, reducer);
     };
-    exports.experimental_useResourceEffect = void 0;
     exports.forwardRef = function (render) {
       null != render && render.$$typeof === REACT_MEMO_TYPE
         ? console.error(
@@ -1215,8 +1215,17 @@
     exports.useDeferredValue = function (value, initialValue) {
       return resolveDispatcher().useDeferredValue(value, initialValue);
     };
-    exports.useEffect = function (create, deps) {
-      return resolveDispatcher().useEffect(create, deps);
+    exports.useEffect = function (create, createDeps, update) {
+      null == create &&
+        console.warn(
+          "React Hook useEffect requires an effect callback. Did you forget to pass a callback to the hook?"
+        );
+      var dispatcher = resolveDispatcher();
+      if ("function" === typeof update)
+        throw Error(
+          "useEffect CRUD overload is not enabled in this build of React."
+        );
+      return dispatcher.useEffect(create, createDeps);
     };
     exports.useId = function () {
       return resolveDispatcher().useId();
@@ -1225,9 +1234,17 @@
       return resolveDispatcher().useImperativeHandle(ref, create, deps);
     };
     exports.useInsertionEffect = function (create, deps) {
+      null == create &&
+        console.warn(
+          "React Hook useInsertionEffect requires an effect callback. Did you forget to pass a callback to the hook?"
+        );
       return resolveDispatcher().useInsertionEffect(create, deps);
     };
     exports.useLayoutEffect = function (create, deps) {
+      null == create &&
+        console.warn(
+          "React Hook useLayoutEffect requires an effect callback. Did you forget to pass a callback to the hook?"
+        );
       return resolveDispatcher().useLayoutEffect(create, deps);
     };
     exports.useMemo = function (create, deps) {
@@ -1257,7 +1274,7 @@
     exports.useTransition = function () {
       return resolveDispatcher().useTransition();
     };
-    exports.version = "19.1.0-experimental-37906d4d-20250127";
+    exports.version = "19.1.0-experimental-32b0cad8-20250213";
     "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
       "function" ===
         typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&

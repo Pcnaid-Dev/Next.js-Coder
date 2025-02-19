@@ -26,70 +26,68 @@ describe('app-dir - error-on-next-codemod-comment', () => {
 
       await assertHasRedbox(browser)
 
-      // TODO(jiwon): Remove this once we have a new dev overlay at stable.
+      // TODO(new-dev-overlay): Remove this once old dev overlay fork is removed
       if (isNewDevOverlay) {
         if (process.env.TURBOPACK) {
           expect(await getRedboxSource(browser)).toMatchInlineSnapshot(`
-          "./app/page.tsx (2:2)
+           "./app/page.tsx (2:2)
+           Ecmascript file had an error
+             1 | export default function Page() {
+           > 2 |   // @next-codemod-error remove jsx of next line
+               |  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+             3 |   return <p>hello world</p>
+             4 | }
+             5 |
 
-          Ecmascript file had an error
-            1 | export default function Page() {
-          > 2 |   // @next-codemod-error remove jsx of next line
-              |  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-            3 |   return <p>hello world</p>
-            4 | }
-            5 |
-
-          You have an unresolved @next/codemod comment "remove jsx of next line" that needs review.
-          After review, either remove the comment if you made the necessary changes or replace "@next-codemod-error" with "@next-codemod-ignore" to bypass the build error if no action at this line can be taken."
-        `)
+           You have an unresolved @next/codemod comment "remove jsx of next line" that needs review.
+           After review, either remove the comment if you made the necessary changes or replace "@next-codemod-error" with "@next-codemod-ignore" to bypass the build error if no action at this line can be taken."
+          `)
         } else {
           expect(await getRedboxSource(browser)).toMatchInlineSnapshot(`
-          "./app/page.tsx
-
-          Error:   x You have an unresolved @next/codemod comment "remove jsx of next line" that needs review.
-            | After review, either remove the comment if you made the necessary changes or replace "@next-codemod-error" with "@next-codemod-ignore" to bypass the build error if no action at this line can
-            | be taken.
-            | 
-             ,-[2:1]
-           1 | export default function Page() {
-           2 |   // @next-codemod-error remove jsx of next line
-             :  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-           3 |   return <p>hello world</p>
-           4 | }
-             \`----"
-        `)
+           "./app/page.tsx
+           Error:   x You have an unresolved @next/codemod comment "remove jsx of next line" that needs review.
+             | After review, either remove the comment if you made the necessary changes or replace "@next-codemod-error" with "@next-codemod-ignore" to bypass the build error if no action at this line can
+             | be taken.
+             | 
+              ,-[2:1]
+            1 | export default function Page() {
+            2 |   // @next-codemod-error remove jsx of next line
+              :  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            3 |   return <p>hello world</p>
+            4 | }
+              \`----"
+          `)
         }
       } else {
         if (process.env.TURBOPACK) {
           expect(await getRedboxSource(browser)).toMatchInlineSnapshot(`
-          "./app/page.tsx:2:2
-          Ecmascript file had an error
-            1 | export default function Page() {
-          > 2 |   // @next-codemod-error remove jsx of next line
-              |  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-            3 |   return <p>hello world</p>
-            4 | }
-            5 |
+           "./app/page.tsx (2:2)
+           Ecmascript file had an error
+             1 | export default function Page() {
+           > 2 |   // @next-codemod-error remove jsx of next line
+               |  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+             3 |   return <p>hello world</p>
+             4 | }
+             5 |
 
-          You have an unresolved @next/codemod comment "remove jsx of next line" that needs review.
-          After review, either remove the comment if you made the necessary changes or replace "@next-codemod-error" with "@next-codemod-ignore" to bypass the build error if no action at this line can be taken."
-        `)
+           You have an unresolved @next/codemod comment "remove jsx of next line" that needs review.
+           After review, either remove the comment if you made the necessary changes or replace "@next-codemod-error" with "@next-codemod-ignore" to bypass the build error if no action at this line can be taken."
+          `)
         } else {
           expect(await getRedboxSource(browser)).toMatchInlineSnapshot(`
-          "./app/page.tsx
-          Error:   x You have an unresolved @next/codemod comment "remove jsx of next line" that needs review.
-            | After review, either remove the comment if you made the necessary changes or replace "@next-codemod-error" with "@next-codemod-ignore" to bypass the build error if no action at this line can
-            | be taken.
-            | 
-             ,-[2:1]
-           1 | export default function Page() {
-           2 |   // @next-codemod-error remove jsx of next line
-             :  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-           3 |   return <p>hello world</p>
-           4 | }
-             \`----"
-        `)
+                     "./app/page.tsx
+                     Error:   x You have an unresolved @next/codemod comment "remove jsx of next line" that needs review.
+                       | After review, either remove the comment if you made the necessary changes or replace "@next-codemod-error" with "@next-codemod-ignore" to bypass the build error if no action at this line can
+                       | be taken.
+                       | 
+                        ,-[2:1]
+                      1 | export default function Page() {
+                      2 |   // @next-codemod-error remove jsx of next line
+                        :  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      3 |   return <p>hello world</p>
+                      4 | }
+                        \`----"
+                  `)
         }
       }
     })

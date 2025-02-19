@@ -5,8 +5,6 @@ export function Base() {
   return (
     <style>
       {css`
-        @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;900&family=Geist+Mono:wght@400;900&display=swap');
-
         :host {
           ${
             // Although the style applied to the shadow host is isolated,
@@ -32,7 +30,7 @@ export function Base() {
 
           --color-background: white;
           --color-font: #757575;
-          --color-backdrop: rgba(17, 17, 17, 0.2);
+          --color-backdrop: rgba(250, 250, 250, 0.8);
           --color-border-shadow: rgba(0, 0, 0, 0.145);
 
           --color-title-color: #1f1f1f;
@@ -74,9 +72,16 @@ export function Base() {
             0px 4px 8px -4px rgba(0, 0, 0, 0.04),
             0px 16px 24px -8px rgba(0, 0, 0, 0.06);
 
+          --focus-color: var(--color-blue-800);
+          --focus-ring: 2px solid var(--focus-color);
+
+          --timing-swift: cubic-bezier(0.23, 0.88, 0.26, 0.92);
+          --timing-overlay: cubic-bezier(0.175, 0.885, 0.32, 1.1);
+
           --rounded-none: 0px;
           --rounded-sm: 0.125rem; /* 2px */
           --rounded-md: 0.25rem; /* 4px */
+          --rounded-md-2: 0.375rem; /* 6px */
           --rounded-lg: 0.5rem; /* 8px */
           --rounded-xl: 0.75rem; /* 12px */
           --rounded-2xl: 1rem; /* 16px */
@@ -109,13 +114,17 @@ export function Base() {
           --size-11: 2.75rem; /* 44px */
           --size-11_5: 2.875rem; /* 46px */
           --size-12: 3rem; /* 48px */
+
+          @media print {
+            display: none;
+          }
         }
 
         @media (prefers-color-scheme: dark) {
           :host {
             --color-background: rgb(28, 28, 30);
             --color-font: white;
-            --color-backdrop: rgb(44, 44, 46);
+            --color-backdrop: rgb(0, 0, 0, 0.8);
             --color-border-shadow: rgba(255, 255, 255, 0.145);
 
             --color-title-color: #fafafa;

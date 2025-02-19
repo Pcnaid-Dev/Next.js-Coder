@@ -1,29 +1,52 @@
 import type { OverlayState } from '../../../../../shared'
-import type { ReadyRuntimeError } from '../../../helpers/get-error-by-type'
 
 import { BuildError } from '../../../container/build-error'
 import { Errors } from '../../../container/errors'
 import { RootLayoutMissingTagsError } from '../../../container/root-layout-missing-tags-error'
+import { useDelayedRender } from '../../../hooks/use-delayed-render'
+import type { ReadyRuntimeError } from '../../../../../internal/helpers/get-error-by-type'
+
+const transitionDurationMs = 200
+
+export interface ErrorBaseProps {
+  rendered: boolean
+  transitionDurationMs: number
+  isTurbopack: boolean
+  versionInfo: OverlayState['versionInfo']
+}
 
 export function ErrorOverlay({
   state,
-  readyErrors,
+  runtimeErrors,
   isErrorOverlayOpen,
   setIsErrorOverlayOpen,
 }: {
   state: OverlayState
-  readyErrors: ReadyRuntimeError[]
+  runtimeErrors: ReadyRuntimeError[]
   isErrorOverlayOpen: boolean
   setIsErrorOverlayOpen: (value: boolean) => void
 }) {
   const isTurbopack = !!process.env.TURBOPACK
 
+  // This hook lets us do an exit animation before unmounting the component
+  const { mounted, rendered } = useDelayedRender(isErrorOverlayOpen, {
+    exitDelay: transitionDurationMs,
+  })
+
+  const commonProps = {
+    rendered,
+    transitionDurationMs,
+    isTurbopack,
+    versionInfo: state.versionInfo,
+  }
+
   if (!!state.rootLayoutMissingTags?.length) {
     return (
       <RootLayoutMissingTagsError
-        isTurbopack={isTurbopack}
+        {...commonProps}
+        // This is not a runtime error, forcedly display error overlay
+        rendered
         missingTags={state.rootLayoutMissingTags}
-        versionInfo={state.versionInfo}
       />
     )
   }
@@ -31,28 +54,28 @@ export function ErrorOverlay({
   if (state.buildError !== null) {
     return (
       <BuildError
-        isTurbopack={isTurbopack}
+        {...commonProps}
         message={state.buildError}
-        versionInfo={state.versionInfo}
+        // This is not a runtime error, forcedly display error overlay
+        rendered
       />
     )
   }
 
   // No Runtime Errors.
-  if (!readyErrors.length) {
+  if (!runtimeErrors.length) {
     return null
   }
 
-  if (!isErrorOverlayOpen) {
+  if (!mounted) {
     return null
   }
 
   return (
     <Errors
+      {...commonProps}
       debugInfo={state.debugInfo}
-      isTurbopack={isTurbopack}
-      readyErrors={readyErrors}
-      versionInfo={state.versionInfo}
+      runtimeErrors={runtimeErrors}
       onClose={() => {
         setIsErrorOverlayOpen(false)
       }}

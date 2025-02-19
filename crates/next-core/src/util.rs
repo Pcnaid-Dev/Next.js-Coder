@@ -98,7 +98,7 @@ pub async fn get_transpiled_packages(
     next_config: Vc<NextConfig>,
     project_path: ResolvedVc<FileSystemPath>,
 ) -> Result<Vc<Vec<RcStr>>> {
-    let mut transpile_packages: Vec<RcStr> = next_config.transpile_packages().await?.clone_value();
+    let mut transpile_packages: Vec<RcStr> = next_config.transpile_packages().owned().await?;
 
     let default_transpiled_packages: Vec<RcStr> = load_next_js_templateon(
         project_path,
@@ -428,8 +428,7 @@ async fn parse_route_matcher_from_js_value(
 pub async fn parse_config_from_source(
     module: ResolvedVc<Box<dyn Module>>,
 ) -> Result<Vc<NextSourceConfig>> {
-    if let Some(ecmascript_asset) =
-        ResolvedVc::try_sidecast::<Box<dyn EcmascriptParsable>>(module).await?
+    if let Some(ecmascript_asset) = ResolvedVc::try_sidecast::<Box<dyn EcmascriptParsable>>(module)
     {
         if let ParseResult::Ok {
             program: Program::Module(module_ast),

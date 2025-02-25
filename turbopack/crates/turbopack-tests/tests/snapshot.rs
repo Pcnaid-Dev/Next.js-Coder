@@ -3,14 +3,11 @@
 
 mod util;
 
-use std::{
-    collections::{HashSet, VecDeque},
-    fs,
-    path::PathBuf,
-};
+use std::{collections::VecDeque, fs, path::PathBuf};
 
 use anyhow::{bail, Context, Result};
 use dunce::canonicalize;
+use rustc_hash::FxHashSet;
 use serde::Deserialize;
 use serde_json::json;
 use turbo_rcstr::RcStr;
@@ -36,7 +33,7 @@ use turbopack_browser::BrowserChunkingContext;
 use turbopack_core::{
     asset::Asset,
     chunk::{
-        availability_info::AvailabilityInfo, ChunkableModule, ChunkingContext, ChunkingContextExt,
+        availability_info::AvailabilityInfo, ChunkGroupType, ChunkingContext, ChunkingContextExt,
         EvaluatableAsset, EvaluatableAssetExt, EvaluatableAssets, MinifyType,
     },
     compile_time_defines,
@@ -394,15 +391,19 @@ async fn run_test_operation(resource: RcStr) -> Result<Vc<FileSystemPath>> {
         let evaluatable_assets = runtime_entries
             .unwrap_or_else(EvaluatableAssets::empty)
             .with_entry(Vc::upcast(ecmascript));
-        let all_modules = Vc::cell(
-            evaluatable_assets
-                .await?
-                .iter()
-                .copied()
-                .map(ResolvedVc::upcast)
-                .collect(),
-        );
-        let module_graph = ModuleGraph::from_modules(all_modules);
+        let all_modules = evaluatable_assets
+            .await?
+            .iter()
+            .copied()
+            .map(ResolvedVc::upcast)
+            .collect();
+        let module_graph = ModuleGraph::from_modules(Vc::cell(vec![(
+            all_modules,
+            match options.runtime {
+                Runtime::Browser => ChunkGroupType::Evaluated,
+                Runtime::NodeJs => ChunkGroupType::Entry,
+            },
+        )]));
         // TODO: Load runtime entries from snapshots
         match options.runtime {
             Runtime::Browser => chunking_context.evaluated_chunk_group_assets(
@@ -430,7 +431,6 @@ async fn run_test_operation(resource: RcStr) -> Result<Vc<FileSystemPath>> {
                                         .into(),
                                 )
                                 .with_extension("entry.js".into()),
-                            entry_module,
                             evaluatable_assets,
                             module_graph,
                             OutputAssets::empty(),
@@ -441,17 +441,12 @@ async fn run_test_operation(resource: RcStr) -> Result<Vc<FileSystemPath>> {
                 ])
             }
         }
-    } else if let Some(chunkable) =
-        Vc::try_resolve_downcast::<Box<dyn ChunkableModule>>(entry_module).await?
-    {
-        let module_graph = ModuleGraph::from_module(Vc::upcast(chunkable));
-        chunking_context.root_chunk_group_assets(chunkable, module_graph)
     } else {
         // TODO convert into a serve-able asset
         bail!("Entry module is not chunkable, so it can't be used to bootstrap the application")
     };
 
-    let mut seen = HashSet::new();
+    let mut seen = FxHashSet::default();
     let mut queue: VecDeque<_> = chunks.await?.iter().copied().collect();
 
     let output_path = project_path.await?;
@@ -460,11 +455,7 @@ async fn run_test_operation(resource: RcStr) -> Result<Vc<FileSystemPath>> {
             .await
             .context(format!(
                 "Failed to walk asset {}",
-                asset
-                    .ident()
-                    .to_string()
-                    .await
-                    .context("to_string failed")?
+                asset.path().to_string().await.context("to_string failed")?
             ))?;
     }
 
@@ -478,10 +469,10 @@ async fn run_test_operation(resource: RcStr) -> Result<Vc<FileSystemPath>> {
 async fn walk_asset(
     asset: ResolvedVc<Box<dyn OutputAsset>>,
     output_path: &ReadRef<FileSystemPath>,
-    seen: &mut HashSet<Vc<FileSystemPath>>,
+    seen: &mut FxHashSet<Vc<FileSystemPath>>,
     queue: &mut VecDeque<ResolvedVc<Box<dyn OutputAsset>>>,
 ) -> Result<()> {
-    let path = asset.ident().path().resolve().await?;
+    let path = asset.path().resolve().await?;
 
     if !seen.insert(path) {
         return Ok(());
@@ -498,9 +489,7 @@ async fn walk_asset(
             .await?
             .iter()
             .copied()
-            .map(|asset| async move {
-                Ok(ResolvedVc::try_downcast::<Box<dyn OutputAsset>>(asset).await?)
-            })
+            .map(|asset| async move { Ok(ResolvedVc::try_downcast::<Box<dyn OutputAsset>>(asset)) })
             .try_join()
             .await?
             .into_iter()

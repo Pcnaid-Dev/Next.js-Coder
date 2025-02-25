@@ -33,6 +33,8 @@ import {
   NEXT_CACHE_REVALIDATE_TAG_TOKEN_HEADER,
   NEXT_CACHE_REVALIDATED_TAGS_HEADER,
   MATCHED_PATH_HEADER,
+  RSC_SEGMENTS_DIR_SUFFIX,
+  RSC_SEGMENT_SUFFIX,
 } from '../lib/constants'
 import { FileType, fileExists } from '../lib/file-exists'
 import { findPagesDir } from '../lib/find-pages-dir'
@@ -78,7 +80,7 @@ import {
   UNDERSCORE_NOT_FOUND_ROUTE_ENTRY,
   UNDERSCORE_NOT_FOUND_ROUTE,
   DYNAMIC_CSS_MANIFEST,
-  RESPONSE_CONFIG_MANIFEST,
+  TURBOPACK_CLIENT_MIDDLEWARE_MANIFEST,
 } from '../shared/lib/constants'
 import {
   getSortedRoutes,
@@ -198,6 +200,10 @@ import {
 import { InvariantError } from '../shared/lib/invariant-error'
 import { HTML_LIMITED_BOT_UA_RE_STRING } from '../shared/lib/router/utils/is-bot'
 import type { UseCacheTrackerKey } from './webpack/plugins/telemetry-plugin/use-cache-tracker-utils'
+import {
+  buildPrefetchSegmentDataRoute,
+  type PrefetchSegmentDataRoute,
+} from '../server/lib/router-utils/build-prefetch-segment-data-route'
 
 import { turbopackBuild } from './turbopack-build'
 
@@ -343,9 +349,10 @@ export type ManifestRoute = ManifestBuiltRoute & {
   page: string
   namedRegex?: string
   routeKeys?: { [key: string]: string }
+  prefetchSegmentDataRoutes?: PrefetchSegmentDataRoute[]
 }
 
-export type ManifestDataRoute = {
+type ManifestDataRoute = {
   page: string
   routeKeys?: { [key: string]: string }
   dataRouteRegex: string
@@ -387,6 +394,9 @@ export type RoutesManifest = {
     prefetchHeader: typeof NEXT_ROUTER_PREFETCH_HEADER
     suffix: typeof RSC_SUFFIX
     prefetchSuffix: typeof RSC_PREFETCH_SUFFIX
+    prefetchSegmentHeader: typeof NEXT_ROUTER_SEGMENT_PREFETCH_HEADER
+    prefetchSegmentDirSuffix: typeof RSC_SEGMENTS_DIR_SUFFIX
+    prefetchSegmentSuffix: typeof RSC_SEGMENT_SUFFIX
   }
   rewriteHeaders: {
     pathHeader: typeof NEXT_REWRITTEN_PATH_HEADER
@@ -497,12 +507,19 @@ async function writeClientSsgManifest(
   )
 }
 
-interface FunctionsConfigManifest {
+export interface FunctionsConfigManifest {
   version: number
   functions: Record<
     string,
     {
       maxDuration?: number | undefined
+      runtime?: 'nodejs'
+      matchers?: Array<{
+        regexp: string
+        originalSource: string
+        has?: Rewrite['has']
+        missing?: Rewrite['has']
+      }>
     }
   >
 }
@@ -578,6 +595,7 @@ async function writeStandaloneDirectory(
   outputFileTracingRoot: string,
   requiredServerFiles: RequiredServerFilesManifest,
   middlewareManifest: MiddlewareManifest,
+  hasNodeMiddleware: boolean,
   hasInstrumentationHook: boolean,
   staticPages: Set<string>,
   loadedEnvFiles: LoadedEnvFiles,
@@ -595,6 +613,7 @@ async function writeStandaloneDirectory(
         outputFileTracingRoot,
         requiredServerFiles.config,
         middlewareManifest,
+        hasNodeMiddleware,
         hasInstrumentationHook,
         staticPages
       )
@@ -621,6 +640,23 @@ async function writeStandaloneDirectory(
         })
         await fs.copyFile(filePath, outputPath)
       }
+
+      if (hasNodeMiddleware) {
+        const middlewareOutput = path.join(
+          distDir,
+          STANDALONE_DIRECTORY,
+          path.relative(outputFileTracingRoot, distDir),
+          SERVER_DIRECTORY,
+          'middleware.js'
+        )
+
+        await fs.mkdir(path.dirname(middlewareOutput), { recursive: true })
+        await fs.copyFile(
+          path.join(distDir, SERVER_DIRECTORY, 'middleware.js'),
+          middlewareOutput
+        )
+      }
+
       await recursiveCopy(
         path.join(distDir, SERVER_DIRECTORY, 'pages'),
         path.join(
@@ -1249,6 +1285,9 @@ export default async function build(
               contentTypeHeader: RSC_CONTENT_TYPE_HEADER,
               suffix: RSC_SUFFIX,
               prefetchSuffix: RSC_PREFETCH_SUFFIX,
+              prefetchSegmentHeader: NEXT_ROUTER_SEGMENT_PREFETCH_HEADER,
+              prefetchSegmentSuffix: RSC_SEGMENT_SUFFIX,
+              prefetchSegmentDirSuffix: RSC_SEGMENTS_DIR_SUFFIX,
             },
             rewriteHeaders: {
               pathHeader: NEXT_REWRITTEN_PATH_HEADER,
@@ -1300,24 +1339,6 @@ export default async function build(
           config.experimental.clientRouterFilterAllowedRate
         )
         NextBuildContext.clientRouterFilters = clientRouterFilters
-      }
-
-      if (config.experimental.streamingMetadata) {
-        // Write html limited bots config to response-config-manifest
-        const responseConfigManifestPath = path.join(
-          distDir,
-          RESPONSE_CONFIG_MANIFEST
-        )
-        const responseConfigManifest: {
-          version: number
-          htmlLimitedBots: string
-        } = {
-          version: 0,
-          htmlLimitedBots:
-            config.experimental.htmlLimitedBots ||
-            HTML_LIMITED_BOT_UA_RE_STRING,
-        }
-        await writeManifest(responseConfigManifestPath, responseConfigManifest)
       }
 
       // Ensure commonjs handling is used for files in the distDir (generally .next)
@@ -1389,7 +1410,10 @@ export default async function build(
             duration: compilerDuration,
             shutdownPromise: p,
             ...rest
-          } = await turbopackBuild(true)
+          } = await turbopackBuild(
+            process.env.NEXT_TURBOPACK_USE_WORKER === undefined ||
+              process.env.NEXT_TURBOPACK_USE_WORKER !== '0'
+          )
           shutdownPromise = p
           traceMemoryUsage('Finished build', nextBuildSpan)
 
@@ -2224,11 +2248,9 @@ export default async function build(
               path.relative(distDir, pagesManifestPath),
               BUILD_MANIFEST,
               PRERENDER_MANIFEST,
+              path.join(SERVER_DIRECTORY, FUNCTIONS_CONFIG_MANIFEST),
               path.join(SERVER_DIRECTORY, MIDDLEWARE_MANIFEST),
               path.join(SERVER_DIRECTORY, MIDDLEWARE_BUILD_MANIFEST + '.js'),
-              ...(config.experimental.streamingMetadata
-                ? [RESPONSE_CONFIG_MANIFEST]
-                : []),
               ...(!process.env.TURBOPACK
                 ? [
                     path.join(
@@ -2300,6 +2322,48 @@ export default async function build(
         )
       }
 
+      const middlewareFile = rootPaths.find((p) =>
+        p.includes(MIDDLEWARE_FILENAME)
+      )
+      let hasNodeMiddleware = false
+
+      if (middlewareFile) {
+        const staticInfo = await getStaticInfoIncludingLayouts({
+          isInsideAppDir: false,
+          pageFilePath: path.join(dir, middlewareFile),
+          config,
+          appDir,
+          pageExtensions: config.pageExtensions,
+          isDev: false,
+          page: 'middleware',
+        })
+
+        if (staticInfo.runtime === 'nodejs') {
+          hasNodeMiddleware = true
+          functionsConfigManifest.functions['/_middleware'] = {
+            runtime: staticInfo.runtime,
+            matchers: staticInfo.middleware?.matchers ?? [
+              {
+                regexp: '^.*$',
+                originalSource: '/:path*',
+              },
+            ],
+          }
+
+          if (turboNextBuild) {
+            await writeManifest(
+              path.join(
+                distDir,
+                'static',
+                buildId,
+                TURBOPACK_CLIENT_MIDDLEWARE_MANIFEST
+              ),
+              functionsConfigManifest.functions['/_middleware'].matchers || []
+            )
+          }
+        }
+      }
+
       await writeFunctionsConfigManifest(distDir, functionsConfigManifest)
 
       if (!isGenerateMode && !buildTracesPromise) {
@@ -2328,8 +2392,6 @@ export default async function build(
         ]).map((page) => {
           return buildDataRoute(page, buildId)
         })
-
-        // await writeManifest(routesManifestPath, routesManifest)
       }
 
       // We need to write the manifest with rewrites before build
@@ -2707,6 +2769,10 @@ export default async function build(
                 ? true
                 : undefined
 
+            const htmlBotsRegexString =
+              // The htmlLimitedBots has been converted to a string during loadConfig
+              config.htmlLimitedBots || HTML_LIMITED_BOT_UA_RE_STRING
+
             // this flag is used to selectively bypass the static cache and invoke the lambda directly
             // to enable server actions on static routes
             const bypassFor: RouteHas[] = [
@@ -2716,6 +2782,20 @@ export default async function build(
                 key: 'content-type',
                 value: 'multipart/form-data;.*',
               },
+              // If it's PPR rendered non-static page, bypass the PPR cache when streaming metadata is enabled.
+              // This will skip the postpone data for those bots requests and instead produce a dynamic render.
+              ...(isRoutePPREnabled &&
+              // Disable streaming metadata for PPR on deployment where we don't have the special env.
+              // TODO: enable streaming metadata in PPR mode by default once it's ready.
+              process.env.__NEXT_EXPERIMENTAL_PPR === 'true'
+                ? [
+                    {
+                      type: 'header',
+                      key: 'user-agent',
+                      value: htmlBotsRegexString,
+                    },
+                  ]
+                : []),
             ]
 
             // We should collect all the dynamic routes into a single array for
@@ -2888,6 +2968,24 @@ export default async function build(
                   prefetchDataRoute = path.posix.join(
                     `${normalizedRoute}${RSC_PREFETCH_SUFFIX}`
                   )
+                }
+
+                if (!isAppRouteHandler && metadata?.segmentPaths) {
+                  const dynamicRoute = routesManifest.dynamicRoutes.find(
+                    (r) => r.page === page
+                  )
+                  if (!dynamicRoute) {
+                    throw new Error('Dynamic route not found')
+                  }
+
+                  dynamicRoute.prefetchSegmentDataRoutes = []
+                  for (const segmentPath of metadata.segmentPaths) {
+                    const result = buildPrefetchSegmentDataRoute(
+                      route.pathname,
+                      segmentPath
+                    )
+                    dynamicRoute.prefetchSegmentDataRoutes.push(result)
+                  }
                 }
 
                 pageInfos.set(route.pathname, {
@@ -3298,6 +3396,12 @@ export default async function build(
           await fs.rm(outdir, { recursive: true, force: true })
           await writeManifest(pagesManifestPath, pagesManifest)
         })
+
+        // We need to write the manifest with rewrites after build as it might
+        // have been modified.
+        await nextBuildSpan
+          .traceChild('write-routes-manifest')
+          .traceAsyncFn(() => writeManifest(routesManifestPath, routesManifest))
       }
 
       const postBuildSpinner = createSpinner('Finalizing page optimization')
@@ -3472,6 +3576,7 @@ export default async function build(
           outputFileTracingRoot,
           requiredServerFilesManifest,
           middlewareManifest,
+          hasNodeMiddleware,
           hasInstrumentationHook,
           staticPages,
           loadedEnvFiles,

@@ -94,6 +94,9 @@ import {
   type EntryIssuesMap,
   type TopLevelIssuesMap,
 } from '../../shared/lib/turbopack/utils'
+import { getDevOverlayFontMiddleware } from '../../client/components/react-dev-overlay/font/get-dev-overlay-font-middleware'
+import { devIndicatorServerState } from './dev-indicator-server-state'
+import { getDisableDevIndicatorMiddleware } from './dev-indicator-middleware'
 // import { getSupportedBrowsers } from '../../build/utils'
 
 const wsServer = new ws.Server({ noServer: true })
@@ -106,7 +109,7 @@ const isTestMode = !!(
 const sessionId = Math.floor(Number.MAX_SAFE_INTEGER * Math.random())
 
 /**
- * Replaces turbopack://[project] with the specified project in the `source` field.
+ * Replaces turbopack:///[project] with the specified project in the `source` field.
  */
 function rewriteTurbopackSources(
   projectRoot: string,
@@ -121,7 +124,7 @@ function rewriteTurbopackSources(
       sourceMap.sources[i] = pathToFileURL(
         join(
           projectRoot,
-          sourceMap.sources[i].replace(/turbopack:\/\/\[project\]/, '')
+          sourceMap.sources[i].replace(/turbopack:\/\/\/\[project\]/, '')
         )
       ).toString()
     }
@@ -233,6 +236,7 @@ export async function createHotReloaderTurbopack(
       encryptionKey,
       previewProps: opts.fsChecker.prerenderManifest.preview,
       browserslistQuery: supportedBrowsers.join(', '),
+      noMangling: false,
     },
     {
       persistentCaching: isPersistentCachingEnabled(opts.nextConfig),
@@ -467,7 +471,8 @@ export async function createHotReloaderTurbopack(
     includeIssues: boolean,
     endpoint: Endpoint,
     makePayload: (
-      change: TurbopackResult
+      change: TurbopackResult,
+      hash: string
     ) => Promise<HMR_ACTION_TYPES> | HMR_ACTION_TYPES | void,
     onError?: (
       error: Error
@@ -486,7 +491,8 @@ export async function createHotReloaderTurbopack(
 
       for await (const change of changed) {
         processIssues(currentEntryIssues, key, change, false, true)
-        const payload = await makePayload(change)
+        // TODO: Get an actual content hash from Turbopack.
+        const payload = await makePayload(change, String(++hmrHash))
         if (payload) {
           sendHmr(key, payload)
         }
@@ -631,6 +637,8 @@ export async function createHotReloaderTurbopack(
     getOverlayMiddleware(project),
     getSourceMapMiddleware(project),
     getNextErrorFeedbackMiddleware(opts.telemetry),
+    getDevOverlayFontMiddleware(),
+    getDisableDevIndicatorMiddleware(),
   ]
 
   const versionInfoPromise = getVersionInfo()
@@ -819,6 +827,10 @@ export async function createHotReloaderTurbopack(
           }
         }
 
+        if (devIndicatorServerState.disabledUntil < Date.now()) {
+          devIndicatorServerState.disabledUntil = 0
+        }
+
         ;(async function () {
           const versionInfo = await versionInfoPromise
 
@@ -831,6 +843,7 @@ export async function createHotReloaderTurbopack(
             debug: {
               devtoolsFrontendUrl,
             },
+            devIndicator: devIndicatorServerState,
           }
 
           sendToClient(client, sync)
@@ -910,6 +923,7 @@ export async function createHotReloaderTurbopack(
         await clearAllModuleContexts()
         this.send({
           action: HMR_ACTIONS_SENT_TO_BROWSER.SERVER_COMPONENT_CHANGES,
+          hash: String(++hmrHash),
         })
       }
     },

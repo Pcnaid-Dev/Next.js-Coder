@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use anyhow::{bail, Context, Result};
 use rustc_hash::FxHashSet;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -45,7 +43,20 @@ struct CustomRoutes {
 pub struct ModularizeImports(FxIndexMap<String, ModularizeImportPackageConfig>);
 
 #[turbo_tasks::value(transparent)]
+#[derive(Clone, Debug)]
 pub struct CacheKinds(FxHashSet<RcStr>);
+
+impl CacheKinds {
+    pub fn extend<I: IntoIterator<Item = RcStr>>(&mut self, iter: I) {
+        self.0.extend(iter);
+    }
+}
+
+impl Default for CacheKinds {
+    fn default() -> Self {
+        CacheKinds(["default", "remote"].iter().map(|&s| s.into()).collect())
+    }
+}
 
 #[turbo_tasks::value(serialization = "custom", eq = "manual")]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, OperationValue)]
@@ -201,9 +212,18 @@ pub enum BuildActivityPositions {
     OperationValue,
 )]
 #[serde(rename_all = "camelCase")]
-pub struct DevIndicatorsConfig {
-    pub build_activity: Option<bool>,
+pub struct DevIndicatorsOptions {
     pub build_activity_position: Option<BuildActivityPositions>,
+    pub position: Option<BuildActivityPositions>,
+}
+
+#[derive(
+    Clone, Debug, PartialEq, Serialize, Deserialize, TraceRawVcs, NonLocalValue, OperationValue,
+)]
+#[serde(untagged)]
+pub enum DevIndicatorsConfig {
+    WithOptions(DevIndicatorsOptions),
+    Boolean(bool),
 }
 
 #[derive(
@@ -1137,7 +1157,7 @@ impl NextConfig {
         if turbo_rules.is_empty() {
             return Vc::cell(None);
         }
-        let active_conditions = active_conditions.into_iter().collect::<HashSet<_>>();
+        let active_conditions = active_conditions.into_iter().collect::<FxHashSet<_>>();
         let mut rules = FxIndexMap::default();
         for (ext, rule) in turbo_rules.iter() {
             fn transform_loaders(loaders: &[LoaderItem]) -> ResolvedVc<WebpackLoaderItems> {
@@ -1161,7 +1181,7 @@ impl NextConfig {
             }
             fn find_rule<'a>(
                 rule: &'a RuleConfigItem,
-                active_conditions: &HashSet<RcStr>,
+                active_conditions: &FxHashSet<RcStr>,
             ) -> FindRuleResult<'a> {
                 match rule {
                     RuleConfigItem::Options(rule) => FindRuleResult::Found(rule),
@@ -1423,13 +1443,13 @@ impl NextConfig {
 
     #[turbo_tasks::function]
     pub fn cache_kinds(&self) -> Vc<CacheKinds> {
-        Vc::cell(
-            self.experimental
-                .cache_handlers
-                .as_ref()
-                .map(|handlers| handlers.keys().cloned().collect())
-                .unwrap_or_default(),
-        )
+        let mut cache_kinds = CacheKinds::default();
+
+        if let Some(handlers) = self.experimental.cache_handlers.as_ref() {
+            cache_kinds.extend(handlers.keys().cloned());
+        }
+
+        cache_kinds.cell()
     }
 
     #[turbo_tasks::function]
@@ -1501,9 +1521,9 @@ impl NextConfig {
 
     #[turbo_tasks::function]
     pub async fn turbo_source_maps(&self) -> Result<Vc<bool>> {
-        let minify = self.experimental.turbo.as_ref().and_then(|t| t.source_maps);
+        let source_maps = self.experimental.turbo.as_ref().and_then(|t| t.source_maps);
 
-        Ok(Vc::cell(minify.unwrap_or(true)))
+        Ok(Vc::cell(source_maps.unwrap_or(true)))
     }
 }
 
